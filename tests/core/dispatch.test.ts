@@ -14,4 +14,12 @@ describe('durable dispatch with an injected synthetic transport',()=>{
  it('authenticates and deduplicates callbacks and ignores late start after end',async()=>{const s=setup();const first=s.journal.prepareDispatch(s.action,'buyer');await s.journal.dispatchPrepared(first.id);const callbacks=createCallbacks(s.journal,'fixture-callback-secret-at-least-32-chars');const sign=(raw:string)=>createHmac('sha256','fixture-callback-secret-at-least-32-chars').update(raw).digest('hex');const raw=JSON.stringify({provider:'fixture-provider',eventId:'ended-1',sessionId:first.id,payloadHash:'known-fixture-payload',kind:'ended'});
   expect(()=>callbacks.ingestProviderEvent(raw,'bad')).toThrow();expect(callbacks.ingestProviderEvent(raw,sign(raw))).toBe('applied');expect(callbacks.ingestProviderEvent(raw,sign(raw))).toBe('duplicate');const late=JSON.stringify({provider:'fixture-provider',eventId:'started-late',sessionId:first.id,payloadHash:'later-fixture-payload',kind:'started'});expect(callbacks.ingestProviderEvent(late,sign(late))).toBe('ignored');s.core.close();
  });
+ it('persists exact approved content and distinguishes acknowledged terminal outcomes from unsent work',async()=>{
+  for(const kind of ['ended','failed'] as const){const s=setup();const prepared=s.journal.prepareDispatch(s.action,'buyer');
+   expect(s.core.read('dispatch',prepared.id)).toMatchObject({text:s.action.text,sessionId:null});
+   await s.journal.dispatchPrepared(prepared.id);expect(s.journal.ingestAuthenticatedEvent({provider:'fixture-provider',eventId:`${kind}-event`,sessionId:prepared.id,payloadHash:'fixture',kind})).toBe('applied');
+   expect(s.core.read('dispatch',prepared.id)).toMatchObject({status:kind==='ended'?'completed':'failed_after_send',providerActionId:'synthetic-provider-action'});
+   expect(s.journal.ingestAuthenticatedEvent({provider:'fixture-provider',eventId:'late',sessionId:prepared.id,payloadHash:'fixture',kind:'started'})).toBe('ignored');s.core.close();
+  }
+ });
 });

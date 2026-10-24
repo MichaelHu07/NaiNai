@@ -18,7 +18,7 @@ export class DispatchJournal {
    if(campaign.paused||packet.revisions.request!==parsed.requestRevision||packet.revisions.permission!==parsed.permissionRevision)throw new AppError('AUTHORITY_CHANGED','Current permission/request required.',409);
    if(this.core.read('outreach_lock','global')||campaign.sessions.some(s=>s.status==='active'||s.status==='pending'||s.stopStatus==='pending'))throw new AppError('SESSION_ACTIVE','An active or uncertain conversation already holds the global slot.',409);
    const suppliers=new Set(this.core.list<DispatchRecord>('dispatch').map(r=>r.supplierId));suppliers.add(parsed.supplierId);if(suppliers.size>5)throw new AppError('SUPPLIER_LIMIT','At most five approved suppliers across both cases.',409);
-   const timestamp=this.now().toISOString();const record:DispatchRecord={id:randomUUID(),workspaceId:'live',buyerId,caseId:parsed.caseId,supplierId:parsed.supplierId,endpointId:parsed.endpointId,kind:'request_quote',purpose:parsed.purpose,requestRevision:parsed.requestRevision,permissionRevision:parsed.permissionRevision,cancellationRevision:campaign.cancellationRevision,idempotencyKey:parsed.idempotencyKey,payloadHash,providerActionId:null,createdAt:timestamp,updatedAt:timestamp,deadlineAt:new Date(this.now().getTime()+180000).toISOString(),status:'prepared'};
+   const timestamp=this.now().toISOString();const record:DispatchRecord={id:randomUUID(),workspaceId:'live',buyerId,caseId:parsed.caseId,supplierId:parsed.supplierId,endpointId:parsed.endpointId,sessionId:parsed.sessionId,text:parsed.text,kind:'request_quote',purpose:parsed.purpose,requestRevision:parsed.requestRevision,permissionRevision:parsed.permissionRevision,cancellationRevision:campaign.cancellationRevision,idempotencyKey:parsed.idempotencyKey,payloadHash,providerActionId:null,createdAt:timestamp,updatedAt:timestamp,deadlineAt:new Date(this.now().getTime()+180000).toISOString(),status:'prepared'};
    if(!this.options.canSend(record))throw new AppError('NO_AUTHORITY','Specific supplier and endpoint authority required.',403);
    this.core.write('dispatch',record.id,record);this.core.write('dispatch_keys',key,{id:record.id,payloadHash});this.core.write('outreach_lock','global',{id:record.id});return record;
   });
@@ -36,8 +36,8 @@ export class DispatchJournal {
   if(event.provider!==this.options.provider)throw new AppError('BAD_PROVIDER','Event does not match this provider.',403);
   return this.core.transaction(()=>{const receiptKey=`${event.provider}:${event.eventId}`,previous=this.core.read<{hash:string}>('callback_receipts',receiptKey),hash=digest(event);
    if(previous){if(previous.hash!==hash)throw new AppError('REPLAY_CONFLICT','Event ID reused with a different payload.',409);return 'duplicate';}
-   const record=this.record(event.sessionId);this.core.write('callback_receipts',receiptKey,{hash});if(record.status==='cancelled'||record.status==='failed_before_send')return 'ignored';
-   if(event.kind==='ended'||event.kind==='failed'){record.status=event.kind==='ended'?'cancelled':'failed_before_send';this.release(record.id);}else if(event.kind==='started'||event.kind==='action_acknowledged'){record.status='acknowledged';}
+   const record=this.record(event.sessionId);this.core.write('callback_receipts',receiptKey,{hash});if(['cancelled','failed_before_send','completed','failed_after_send'].includes(record.status))return 'ignored';
+   if(event.kind==='ended'||event.kind==='failed'){record.status=event.kind==='ended'?'completed':'failed_after_send';this.release(record.id);}else if(event.kind==='started'||event.kind==='action_acknowledged'){record.status='acknowledged';}
    record.updatedAt=this.now().toISOString();this.core.write('dispatch',record.id,record);return 'applied';
   });
  }

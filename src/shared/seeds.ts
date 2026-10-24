@@ -18,8 +18,10 @@ export function makeFixture(request:CaseRequest,scenario:FixtureScenario='comple
  if(scenario==='over_budget'){if(request.category==='table'){quote.costs.item=known(15000);quote.totalCents=17400;}else{quote.compute!.ratePerGpuHour='4';quote.totalCents=230400;}}
  if(scenario==='condition_change'&&quote.requirements.category==='table'){quote.requirements.condition='open_box';quote.requirements.inspection='pending';quote.requirements.warranty=null;quote.scopeKey='table-open-box-alternative';}
  if(scenario==='minimum_term'&&quote.compute){quote.compute.ratePerGpuHour='2';quote.compute.minimumHours=168;quote.totalCents=268800;quote.scopeKey='gpu-168h-alternative';}
+ const price=(key:keyof QuoteSnapshot['costs'])=>{const cost=quote.costs[key];return cost.status==='known'?`$${(cost.amountCents!/100).toFixed(2)}`:cost.status;};
+ const summary=quote.requirements.category==='table'?`Item ${price('item')}; ${quote.requirements.deliveryService} delivery to ZIP ${quote.requirements.deliveryZip} ${price('delivery')}; fictional tax ${price('tax')}; mandatory fees ${price('fees')}. Condition ${quote.requirements.condition}; inspection ${quote.requirements.inspection}; warranty ${quote.requirements.warranty??'unknown'}.`:`${quote.compute!.gpuCount} GPUs at $${quote.compute!.ratePerGpuHour}/GPU-hour; minimum ${quote.compute!.minimumHours} hours; ${quote.compute!.billingIncrementHours}-hour billing increments. No real workload or reserved capacity.`;
  evidence[0].expiresAt=quote.expiresAt;
- evidence[0].excerpt=`${excerpt}\nFixture scenario: ${scenario}. Structured terms: ${JSON.stringify({costs:quote.costs,compute:quote.compute,requirements:quote.requirements,currency:quote.currency,totalCents:quote.totalCents,scopeKey:quote.scopeKey,recordedAt:quote.recordedAt,expiresAt:quote.expiresAt})}`;
+ evidence[0].excerpt=`${excerpt}\n${summary}\nFixture scenario: ${scenario}. Structured terms: ${JSON.stringify({costs:quote.costs,compute:quote.compute,requirements:quote.requirements,currency:quote.currency,totalCents:quote.totalCents,scopeKey:quote.scopeKey,recordedAt:quote.recordedAt,expiresAt:quote.expiresAt})}`;
  evidence[0].artifactHash=createHash('sha256').update(evidence[0].excerpt).digest('hex');
  return {quote,evidence,context:{conversationOutcome:'complete',reason:'Controlled fixture; no external service or supplier involved.'}};
 }
