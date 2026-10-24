@@ -4,15 +4,16 @@ import type { CampaignState, PacketSnapshot, FixtureScenario } from '../../src/s
 
 // The API process is owned by the lead. Browser tests isolate that boundary;
 // production components and their fetch/CSRF/revision handling run unchanged.
-async function workspace(page: Page, pendingStop = false) {
+async function workspace(page: Page, pendingStop = false, configure?: (packets: Map<string, PacketSnapshot>, campaign: CampaignState) => void) {
   const packets = new Map<string, PacketSnapshot>();
   for (const request of structuredClone(seedCases)) {
     const fixture = makeFixture(request);
     packets.set(request.caseId, { workspaceId: 'fixture', case: request, ...fixture,
-      assessment: { outcome: request.category === 'table' ? 'needs_clarification' : 'evaluation_findings', headline: 'Delivery service needs clarification', checks: [], unknowns: ['Buyer delivery service is unresolved'], knownTotalCents: 14400, totalCents: 14400, confirmed: true, comparableScope: false },
+      assessment: { outcome: request.category === 'table' ? 'needs_clarification' : 'evaluation_findings', headline: request.category === 'table' ? 'Delivery service needs clarification' : 'Evaluation-only findings; no real workload or capacity reservation', checks: [], unknowns: request.category === 'table' ? ['Buyer delivery service is unresolved'] : ['Availability is indicative; capacity is not reserved'], knownTotalCents: request.category === 'table' ? 14400 : 172800, totalCents: request.category === 'table' ? 14400 : 172800, confirmed: true, comparableScope: request.category === 'gpu' },
       revisions: { request: 1, quote: 1, evidence: 1, permission: 1 }, review: null });
   }
   const campaign: CampaignState = { paused: false, cancellationRevision: 1, jobs: [], sessions: [], counts: { observations: 0, suppliersContacted: 0, replies: 0, confirmedQuotes: 0, fixtureSessions: 0 } };
+  configure?.(packets, campaign);
   let stale = false;
   await page.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
@@ -57,6 +58,7 @@ async function workspace(page: Page, pendingStop = false) {
     return send({ code: 'NOT_FOUND', message: path }, 404);
   });
   await page.goto('/');
+  return { packets, campaign };
 }
 
 test('case switching preserves buyer intent and original source boundaries', async ({ page }) => {
@@ -166,3 +168,61 @@ test('both cases remain operable at desktop and phone widths with keyboard sourc
   await page.getByRole('button', { name: 'Save new request revision' }).click();
   expect((await update).postDataJSON().request.requirements.continuousHours).toBe(96);
 });
+
+test('background packet refresh replaces expired qualification and current review without manual refresh', async ({ page }) => {
+  const now = new Date();
+  await page.clock.install({ time: now });
+  const { packets } = await workspace(page, false, packets => {
+    const packet = packets.get('table')!;
+    packet.quote!.expiresAt = new Date(now.getTime() + 5000).toISOString();
+    packet.assessment.outcome = 'qualifying_table_quote';
+    packet.assessment.headline = 'Qualifying synthetic quote';
+    packet.assessment.unknowns = [];
+    const { review: _, ...snapshot } = structuredClone(packet);
+    packet.review = { id: 'valid-review', buyerId: 'buyer', reviewedAt: now.toISOString(), revisions: packet.revisions, packet: snapshot };
+  });
+  await expect(page.getByText('qualifying table quote', { exact: true })).toBeVisible();
+  await expect(page.getByText('Reviewed snapshot', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Review findings', exact: true }).click();
+  const packet = packets.get('table')!;
+  packet.assessment.outcome = 'needs_clarification';
+  packet.assessment.headline = 'Quote expired; reconfirm current terms';
+  packet.assessment.unknowns = ['Quote validity expired'];
+  packet.review = null;
+  await page.clock.fastForward(10001);
+  // Polling must not replace the intentionally captured review dialog snapshot.
+  await expect(page.getByRole('dialog')).toContainText('Qualifying synthetic quote');
+  await page.getByRole('button', { name: 'Back to findings' }).click();
+  await expect(page.getByText('Quote expired; reconfirm current terms', { exact: true })).toBeVisible();
+  await expect(page.getByText('qualifying table quote', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Reviewed snapshot', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save quote packet' })).toBeDisabled();
+});
+
+for (const control of ['takeover', 'stop'] as const) {
+  test(`delayed background response cannot reverse acknowledged ${control}`, async ({ page }) => {
+    await page.clock.install();
+    await workspace(page);
+    await page.getByRole('button', { name: 'Start synthetic conversation' }).click();
+    let release: () => void = () => {};
+    let arrived: () => void = () => {};
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const polling = new Promise<void>(resolve => { arrived = resolve; });
+    await page.route('**/api/health', async route => {
+      arrived(); await pending;
+      await route.fulfill({ json: { status: 'ok', mode: 'fixture', contactEnabled: false, providers: { claude: 'unconfigured', cartesia: 'unconfigured', apify: 'unconfigured' } } });
+    });
+    const staleCampaign = page.waitForResponse(response => response.url().endsWith('/api/campaign') && response.request().method() === 'GET');
+    await page.clock.fastForward(10001);
+    await polling;
+    await staleCampaign;
+    await page.getByRole('button', { name: control === 'takeover' ? 'Take over conversation' : 'Stop conversation', exact: true }).click();
+    const label = control === 'takeover' ? 'Human control' : 'Stop confirmed';
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+    const settled = page.waitForResponse(response => response.url().endsWith('/api/health'));
+    release(); await settled;
+    await page.clock.runFor(100);
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+    await expect(page.getByText('Synthetic conversation active', { exact: true })).toHaveCount(0);
+  });
+}

@@ -13,35 +13,49 @@ export default function App() {
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [loading, setLoading] = useState(false);
   const [passphrase, setPassphrase] = useState(''), [reviewSnapshot, setReviewSnapshot] = useState<PacketSnapshot | null>(null), [reviewOpen, setReviewOpen] = useState(false);
   const actionLock = useRef(false), activeCase = useRef(activeId); activeCase.current = activeId;
+  // A mutation invalidates every read that began before its acknowledgement.
+  const mutationGeneration = useRef(0);
 
   const fail = useCallback((value: unknown) => { setError(value instanceof Error ? value.message : 'The request could not be completed.'); if (value instanceof ApiError && value.status === 401) setAuthenticated(false); }, []);
   useEffect(() => { const controller = new AbortController(); api.session(controller.signal).then(result => setAuthenticated(result.authenticated)).catch(value => { if (!controller.signal.aborted) { fail(value); setAuthenticated(false); } }); return () => controller.abort(); }, [fail]);
   useEffect(() => {
     if (!authenticated) return;
-    const controller = new AbortController();
-    Promise.all([api.cases(controller.signal), api.campaign(controller.signal), api.health(controller.signal)]).then(([items, state, ready]) => { setCases(items); setCampaign(state); setHealth(ready); if (!items.some(item => item.caseId === activeCase.current) && items[0]) setActiveId(items[0].caseId); }).catch(value => { if (!controller.signal.aborted) fail(value); });
+    const controller = new AbortController(), generation = mutationGeneration.current;
+    Promise.all([api.cases(controller.signal), api.campaign(controller.signal), api.health(controller.signal)]).then(([items, state, ready]) => {
+      if (controller.signal.aborted) return;
+      setCases(items);
+      if (generation === mutationGeneration.current && !actionLock.current) { setCampaign(state); setHealth(ready); }
+      if (!items.some(item => item.caseId === activeCase.current) && items[0]) setActiveId(items[0].caseId);
+    }).catch(value => { if (!controller.signal.aborted && generation === mutationGeneration.current && !actionLock.current) fail(value); });
     return () => controller.abort();
   }, [authenticated, fail]);
   useEffect(() => {
     if (!authenticated) return;
-    const controller = new AbortController(); setPacket(null); setLoading(true); setReviewOpen(false); setError('');
+    const controller = new AbortController(), generation = mutationGeneration.current; setPacket(null); setLoading(true); setReviewOpen(false); setError('');
     localStorage.setItem('nainai-case', activeId);
-    api.packet(activeId, controller.signal).then(setPacket).catch(value => { if (!controller.signal.aborted) fail(value); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    api.packet(activeId, controller.signal).then(current => { if (!controller.signal.aborted && generation === mutationGeneration.current && activeId === activeCase.current) setPacket(current); }).catch(value => { if (!controller.signal.aborted && generation === mutationGeneration.current) fail(value); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [activeId, authenticated, fail]);
   useEffect(() => {
     if (!authenticated) return;
     const controller = new AbortController();
+    let polling = false;
     const timer = window.setInterval(() => {
-      if (document.hidden || actionLock.current) return;
-      Promise.all([api.campaign(controller.signal), api.health(controller.signal)]).then(([state, ready]) => { setCampaign(state); setHealth(ready); }).catch(value => { if (!controller.signal.aborted) fail(value); });
+      if (document.hidden || actionLock.current || polling) return;
+      polling = true;
+      const generation = mutationGeneration.current;
+      const currentRead = () => !controller.signal.aborted && generation === mutationGeneration.current && activeId === activeCase.current && !actionLock.current;
+      Promise.all([api.packet(activeId, controller.signal), api.campaign(controller.signal), api.health(controller.signal)]).then(([current, state, ready]) => {
+        if (!currentRead()) return;
+        setPacket(current); setCampaign(state); setHealth(ready);
+      }).catch(value => { if (currentRead()) fail(value); }).finally(() => { polling = false; });
     }, 10000);
     return () => { clearInterval(timer); controller.abort(); };
-  }, [authenticated, fail]);
+  }, [authenticated, activeId, fail]);
   const refresh = async () => { const id = activeId; const [current, state] = await Promise.all([api.packet(id), api.campaign()]); if (id === activeCase.current) setPacket(current); setCampaign(state); };
   const perform = async (action: () => Promise<void>) => {
     if (actionLock.current) return;
-    actionLock.current = true; setBusy(true); setError(''); setNotice('');
+    actionLock.current = true; mutationGeneration.current++; setBusy(true); setError(''); setNotice('');
     try { await action(); }
     catch (value) {
       fail(value);
