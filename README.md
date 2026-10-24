@@ -41,7 +41,7 @@ Then open **http://127.0.0.1:3001**. This is a local development service; produc
 4. Switch to **GPU compute**, choose **Longer minimum term**, and compare the $2 hourly rate's $2,688 commitment with the complete fixture's $1,728. Neither is a real offer or saving.
 5. Open **Review findings**, expand the synthetic fee-change test and change a fee. Attempting to mark the old snapshot reviewed returns a conflict. Review the current findings, then **Save quote packet**.
 
-Saved reviews are immutable. Current request, quote, evidence, permissions and quote validity determine whether a review is current. Sharing withdrawal redacts source content in later exports; existing downloads cannot be recalled. Restarting an interrupted rehearsal marks it failed and pauses future conversations until explicitly resumed.
+Saved reviews are immutable. Current request, quote, evidence, permissions and quote validity determine whether a review is current. A server assessment token binds the findings captured by the review dialog; expiry while it is open requires a refreshed explicit review. Sharing withdrawal redacts source content in later exports; existing downloads cannot be recalled. Restarting an interrupted rehearsal marks it failed and pauses future conversations until explicitly resumed.
 
 The app has no accept, checkout, order, payment, deposit, reservation or provisioning operation. Source URLs and deterministic cost checks do not establish supplier authenticity by themselves.
 

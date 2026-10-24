@@ -1,5 +1,7 @@
 # NaiNai Two-Case Quote-Only Implementation Plan
 
+**Execution status, October 24:** The user requested implementation with placeholder integrations and selected the NaiNai GitHub repository. A local fixture-only implementation now exists; see [README](../../../README.md), [current brief](../../../HACK.md) and the [executed reliability matrix](../../NAINAI_RELIABILITY.md). G0/G1/G2 are the current implementation milestone. Live portions of Tasks 2/3 and G3–G5 remain deferred/open, not completed. The historical planning statements below describe the original baseline. Current setup uses Node24, built-in SQLite, Radix Themes and pnpm's frozen lockfile. Review submissions additionally bind the captured server assessment, including time-sensitive quote validity, so an expiry crossing requires explicit refreshed review.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let one buyer research, negotiate and review quote/findings packets for a real table need and an explicitly evaluation-only GPU scenario, without purchasing anything.
