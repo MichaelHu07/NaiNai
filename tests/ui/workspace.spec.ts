@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import { seedCases, makeFixture } from '../../src/shared/seeds';
 import type { CampaignState, PacketSnapshot, FixtureScenario } from '../../src/shared/contracts';
 
@@ -8,7 +9,7 @@ async function workspace(page: Page, pendingStop = false, configure?: (packets: 
   const packets = new Map<string, PacketSnapshot>();
   for (const request of structuredClone(seedCases)) {
     const fixture = makeFixture(request);
-    packets.set(request.caseId, { workspaceId: 'fixture', case: request, ...fixture,
+    packets.set(request.caseId, { workspaceId: 'fixture', reviewBasis: '', case: request, ...fixture,
       assessment: { outcome: request.category === 'table' ? 'needs_clarification' : 'evaluation_findings', headline: request.category === 'table' ? 'Delivery service needs clarification' : 'Evaluation-only findings; no real workload or capacity reservation', checks: [], unknowns: request.category === 'table' ? ['Buyer delivery service is unresolved'] : ['Availability is indicative; capacity is not reserved'], knownTotalCents: request.category === 'table' ? 14400 : 172800, totalCents: request.category === 'table' ? 14400 : 172800, confirmed: true, comparableScope: request.category === 'gpu' },
       revisions: { request: 1, quote: 1, evidence: 1, permission: 1 }, review: null });
   }
@@ -33,8 +34,11 @@ async function workspace(page: Page, pendingStop = false, configure?: (packets: 
     const id = path.includes('/cases/') ? path.split('/cases/')[1].split('/')[0] : '';
     const packet = packets.get(id);
     if (!packet) return send({ code: 'NOT_FOUND', message: 'Unknown fixture' }, 404);
+    const updateBasis = () => { packet.reviewBasis = createHash('sha256').update(JSON.stringify([packet.revisions, packet.assessment])).digest('hex'); };
+    const sendPacket = () => { updateBasis(); return send(packet); };
+    updateBasis();
     if (request.method() !== 'GET' && request.headers()['x-csrf-token'] !== 'test-token') return send({ message: 'CSRF missing' }, 403);
-    if (path.endsWith('/packet')) return send(packet);
+    if (path.endsWith('/packet')) return sendPacket();
     const body = request.postDataJSON();
     if (path.endsWith('/scenario')) {
       const fixture = makeFixture(packet.case, body.scenario as FixtureScenario);
@@ -43,13 +47,13 @@ async function workspace(page: Page, pendingStop = false, configure?: (packets: 
       packet.assessment.headline = body.scenario === 'missing_cost' ? 'Missing delivery cost' : body.scenario === 'over_budget' ? 'Above the strict cap' : 'Delivery service needs clarification';
       packet.assessment.totalCents = fixture.quote?.totalCents ?? null;
       packet.assessment.unknowns = body.scenario === 'missing_cost' ? ['Delivery cost is unknown'] : [];
-      return send(packet);
+      return sendPacket();
     }
-    if (path.endsWith('/request')) { packet.case = body.request; packet.revisions.request++; packet.review = null; return send(packet); }
-    if (path.endsWith('/permissions')) { packet.revisions.permission++; packet.evidence.forEach(e => e.permissions.sharing = body.sharing); packet.review = null; return send(packet); }
-    if (path.endsWith('/quote')) { packet.quote = body.quote; packet.revisions.quote!++; stale = true; packet.review = null; return send(packet); }
+    if (path.endsWith('/request')) { packet.case = body.request; packet.revisions.request++; packet.review = null; return sendPacket(); }
+    if (path.endsWith('/permissions')) { packet.revisions.permission++; packet.evidence.forEach(e => e.permissions.sharing = body.sharing); packet.review = null; return sendPacket(); }
+    if (path.endsWith('/quote')) { packet.quote = body.quote; packet.revisions.quote!++; stale = true; packet.review = null; return sendPacket(); }
     if (path.endsWith('/reviews')) {
-      if (stale && body.expectedRevisions.quote !== packet.revisions.quote) return send({ code: 'STALE_REVISION', message: 'Terms changed. Review the current packet.' }, 409);
+      if (body.expectedReviewBasis !== packet.reviewBasis || (stale && body.expectedRevisions.quote !== packet.revisions.quote)) return send({ code: 'STALE_REVISION', message: 'Terms or assessment changed. Review the current packet.' }, 409);
       const { review: _, ...snapshot } = structuredClone(packet);
       packet.review = { id: 'review-1', buyerId: 'buyer', reviewedAt: new Date().toISOString(), revisions: packet.revisions, packet: snapshot };
       return send(packet.review);
@@ -183,6 +187,7 @@ test('background packet refresh replaces expired qualification and current revie
   });
   await expect(page.getByText('qualifying table quote', { exact: true })).toBeVisible();
   await expect(page.getByText('Reviewed snapshot', { exact: true })).toBeVisible();
+  const inspectedBasis = packets.get('table')!.reviewBasis;
   await page.getByRole('button', { name: 'Review findings', exact: true }).click();
   const packet = packets.get('table')!;
   packet.assessment.outcome = 'needs_clarification';
@@ -192,11 +197,19 @@ test('background packet refresh replaces expired qualification and current revie
   await page.clock.fastForward(10001);
   // Polling must not replace the intentionally captured review dialog snapshot.
   await expect(page.getByRole('dialog')).toContainText('Qualifying synthetic quote');
-  await page.getByRole('button', { name: 'Back to findings' }).click();
+  const submitted = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/reviews'));
+  await page.getByRole('button', { name: 'Mark reviewed', exact: true }).click();
+  expect((await submitted).postDataJSON().expectedReviewBasis).toBe(inspectedBasis);
+  await expect(page.getByRole('alert')).toContainText(/assessment changed/i);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText('Quote expired; reconfirm current terms', { exact: true })).toBeVisible();
   await expect(page.getByText('qualifying table quote', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Reviewed snapshot', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Save quote packet' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Review findings', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Quote expired; reconfirm current terms');
+  await page.getByRole('button', { name: 'Mark reviewed', exact: true }).click();
+  await expect(page.getByText('Reviewed snapshot', { exact: true })).toBeVisible();
 });
 
 for (const control of ['takeover', 'stop'] as const) {

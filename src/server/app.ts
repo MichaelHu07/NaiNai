@@ -14,7 +14,8 @@ import {AppError,digest,NaiNaiCore} from './core/store';
 
 type AuthSession={buyerId:string;csrfToken:string;expiresAt:number};
 type AppOptions={dataDir:string;passphrase:string;allowedOrigins?:string[];now?:()=>Date};
-const reviewInput=z.object({expectedRevisions:RevisionsSchema,idempotencyKey:z.string().min(1).max(160)}).strict();
+const conversationInput=z.object({expectedRevisions:RevisionsSchema,idempotencyKey:z.string().min(1).max(160)}).strict();
+const reviewInput=conversationInput.extend({expectedReviewBasis:z.string().regex(/^[a-f0-9]{64}$/)});
 const param=(req:Request,key:string)=>{const value=req.params[key];if(typeof value!=='string')throw new AppError('INVALID_INPUT','Invalid identifier.');return value;};
 
 export function createApp(options:AppOptions){
@@ -47,7 +48,7 @@ export function createApp(options:AppOptions){
  app.patch('/api/fixtures/cases/:id/quote',(req,res)=>{const body=z.object({quote:QuoteSnapshotSchema,expectedRevisions:RevisionsSchema}).strict().parse(req.body);res.json(core.updateQuote(param(req,'id'),body.quote,body.expectedRevisions,res.locals.buyerId));});
  app.post('/api/fixtures/cases/:id/scenario',(req,res)=>{const body=z.object({scenario:ScenarioSchema,expectedRevisions:RevisionsSchema}).strict().parse(req.body);res.json(core.setScenario(param(req,'id'),body.scenario,body.expectedRevisions,res.locals.buyerId));});
  app.patch('/api/cases/:id/permissions',(req,res)=>{const body=z.object({sharing:z.boolean(),expectedRevisions:RevisionsSchema}).strict().parse(req.body);res.json(core.setSharing(param(req,'id'),body.sharing,body.expectedRevisions,res.locals.buyerId));});
- app.post('/api/fixtures/cases/:id/conversation',(req,res)=>{const body=reviewInput.parse(req.body);res.json(core.startFixtureConversation(param(req,'id'),body.idempotencyKey,body.expectedRevisions,res.locals.buyerId));});
+ app.post('/api/fixtures/cases/:id/conversation',(req,res)=>{const body=conversationInput.parse(req.body);res.json(core.startFixtureConversation(param(req,'id'),body.idempotencyKey,body.expectedRevisions,res.locals.buyerId));});
  app.post('/api/campaign/pause',(_req,res)=>res.json(core.pause(res.locals.buyerId)));
  app.post('/api/campaign/resume',(_req,res)=>res.json(core.pause(res.locals.buyerId,false)));
  app.post('/api/sessions/:id/takeover',(req,res)=>res.json(core.changeSession(param(req,'id'),res.locals.buyerId,s=>takeOverFixtureSession(s,now().toISOString()))));

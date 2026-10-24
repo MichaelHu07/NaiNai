@@ -6,10 +6,22 @@ import {afterEach,describe,it,expect} from 'vitest';
 import {createApp} from '../../src/server/app';
 const workspaces:{dir:string;close:()=>void}[]=[];
 const origin='http://127.0.0.1:5173';
-function setup(){const dir=mkdtempSync(join(tmpdir(),'nainai-api-'));const runtime=createApp({dataDir:dir,passphrase:'test-only-local-session-key',allowedOrigins:[origin]});workspaces.push({dir,close:()=>runtime.core.close()});return {...runtime,agent:request.agent(runtime.app)};}
+function setup(now?:()=>Date){const dir=mkdtempSync(join(tmpdir(),'nainai-api-'));const runtime=createApp({dataDir:dir,passphrase:'test-only-local-session-key',allowedOrigins:[origin],now});workspaces.push({dir,close:()=>runtime.core.close()});return {...runtime,agent:request.agent(runtime.app)};}
 afterEach(()=>{for(const item of workspaces.splice(0)){item.close();rmSync(item.dir,{recursive:true,force:true});}});
 async function login(agent:ReturnType<typeof request.agent>){const result=await agent.post('/api/auth/login').set('Origin',origin).send({passphrase:'test-only-local-session-key'});expect(result.status).toBe(200);return result.body.csrfToken as string;}
 describe('authenticated quote-only API',()=>{
+ it.each(['table','gpu'])('requires the inspected %s assessment basis across expiry',async caseId=>{
+  let time=new Date('2026-10-24T10:00:00Z');const {agent,core}=setup(()=>time);let csrf=await login(agent);
+  const valid=(await agent.get(`/api/cases/${caseId}/packet`)).body;
+  time=new Date('2026-10-25T10:00:00Z');
+  // Renew auth independently; the inspected quote assessment must remain stale.
+  csrf=await login(agent);
+  const stale=await agent.post(`/api/cases/${caseId}/reviews`).set('Origin',origin).set('x-csrf-token',csrf).send({expectedRevisions:valid.revisions,expectedReviewBasis:valid.reviewBasis,idempotencyKey:'old-dialog'});
+  expect(stale.status).toBe(409);expect(stale.body.code).toBe('STALE_REVISION');expect(core.list('reviews')).toHaveLength(0);
+  const fresh=(await agent.get(`/api/cases/${caseId}/packet`)).body;
+  const reviewed=await agent.post(`/api/cases/${caseId}/reviews`).set('Origin',origin).set('x-csrf-token',csrf).send({expectedRevisions:fresh.revisions,expectedReviewBasis:fresh.reviewBasis,idempotencyKey:'fresh-expired'});
+  expect(reviewed.status).toBe(200);expect(reviewed.body.packet.assessment.checks.find((check:{id:string})=>check.id==='validity').status).toBe('fail');
+ });
  it('requires login and CSRF/origin for mutations',async()=>{
   const {agent}=setup();expect((await agent.get('/api/cases')).status).toBe(401);expect((await agent.post('/api/auth/login').set('Origin',origin).send({passphrase:'wrong'})).status).toBe(401);
   const csrf=await login(agent);expect((await agent.get('/api/cases')).body).toHaveLength(2);
@@ -20,10 +32,10 @@ describe('authenticated quote-only API',()=>{
  it('reviews an incomplete case without qualification and rejects a stale retry',async()=>{
   const {agent}=setup();const csrf=await login(agent);const packet=(await agent.get('/api/cases/table/packet')).body;
   expect(packet.assessment.outcome).toBe('needs_clarification');
-  const review=await agent.post('/api/cases/table/reviews').set('Origin',origin).set('x-csrf-token',csrf).send({expectedRevisions:packet.revisions,idempotencyKey:'review-one'});
+  const review=await agent.post('/api/cases/table/reviews').set('Origin',origin).set('x-csrf-token',csrf).send({expectedRevisions:packet.revisions,expectedReviewBasis:packet.reviewBasis,idempotencyKey:'review-one'});
   expect(review.status).toBe(200);expect(review.body.packet.assessment.outcome).toBe('needs_clarification');
   const changed=await agent.post('/api/fixtures/cases/table/scenario').set('Origin',origin).set('x-csrf-token',csrf).send({scenario:'missing_cost',expectedRevisions:packet.revisions});expect(changed.status).toBe(200);
-  const stale=await agent.post('/api/cases/table/reviews').set('Origin',origin).set('x-csrf-token',csrf).send({expectedRevisions:packet.revisions,idempotencyKey:'old-review'});expect(stale.status).toBe(409);expect(stale.body.code).toBe('STALE_REVISION');
+  const stale=await agent.post('/api/cases/table/reviews').set('Origin',origin).set('x-csrf-token',csrf).send({expectedRevisions:packet.revisions,expectedReviewBasis:packet.reviewBasis,idempotencyKey:'old-review'});expect(stale.status).toBe(409);expect(stale.body.code).toBe('STALE_REVISION');
   const exported=await agent.get(`/api/reviews/${review.body.id}/export`);expect(exported.body.currentReview).toBe(false);expect(exported.body.packet.workspaceId).toBe('fixture');
  });
  it('does not enable real providers or commercial tools with placeholder credentials',async()=>{
@@ -35,7 +47,7 @@ describe('authenticated quote-only API',()=>{
  it('keeps GPU assumptions and synthetic evidence in a saved packet',async()=>{
   const {agent}=setup();const csrf=await login(agent);const packet=(await agent.get('/api/cases/gpu/packet')).body;
   expect(packet.case.intent).toBe('evaluation_only');expect(packet.assessment.totalCents).toBe(172800);
-  const review=(await agent.post('/api/cases/gpu/reviews').set('Origin',origin).set('x-csrf-token',csrf).send({expectedRevisions:packet.revisions,idempotencyKey:'gpu-review'})).body;
+  const review=(await agent.post('/api/cases/gpu/reviews').set('Origin',origin).set('x-csrf-token',csrf).send({expectedRevisions:packet.revisions,expectedReviewBasis:packet.reviewBasis,idempotencyKey:'gpu-review'})).body;
   const exported=(await agent.get(`/api/reviews/${review.id}/export`)).body;expect(exported.packet.case.intent).toBe('evaluation_only');expect(exported.packet.evidence.every((e:{origin:string})=>e.origin==='synthetic_fixture')).toBe(true);
  });
  it('blocks conversation advancement after request changes and preserves the original dialogue',async()=>{

@@ -42,22 +42,26 @@ export class NaiNaiCore {
  private state(caseId:string):StoredCase {const state=this.read<StoredCase>('cases',caseId);if(!state)throw new AppError('NOT_FOUND','Case not found.',404);return state;}
  private expected(state:StoredCase,expected:Revisions){const parsed=RevisionsSchema.parse(expected);if(!sameRevisions(state.revisions,parsed))throw new AppError('STALE_REVISION','Terms or permissions changed. Reload and review the current findings.',409);}
  listCases(buyerId:string):CaseRequest[]{this.owner(buyerId);return this.list<StoredCase>('cases').map(state=>state.request);}
- private snapshot(state:StoredCase):Omit<PacketSnapshot,'review'>{
-  return {workspaceId:'fixture',case:clone(state.request),quote:clone(state.quote),evidence:state.evidence.map(item=>({...item,permissions:{...item.permissions,sharing:state.sharing&&item.permissions.sharing},...(!item.permissions.display?{excerpt:'[Redacted: display permission withdrawn]',sourceUrl:null}:{})})),context:clone(state.context),revisions:clone(state.revisions),assessment:this.options.assess(state.request,state.quote,{...state.context,now:this.now().toISOString()})};
+ private snapshot(state:StoredCase,at=this.now()):Omit<PacketSnapshot,'review'>{
+  const assessment=this.options.assess(state.request,state.quote,{...state.context,now:at.toISOString()});
+  const reviewBasis=digest([state.revisions,assessment]);
+  return {workspaceId:'fixture',case:clone(state.request),quote:clone(state.quote),evidence:state.evidence.map(item=>({...item,permissions:{...item.permissions,sharing:state.sharing&&item.permissions.sharing},...(!item.permissions.display?{excerpt:'[Redacted: display permission withdrawn]',sourceUrl:null}:{})})),context:clone(state.context),revisions:clone(state.revisions),assessment,reviewBasis};
  }
  private validity(quote:QuoteSnapshot|null,at=this.now().getTime()){if(!quote)return 'absent';if(!quote.expiresAt||!Number.isFinite(Date.parse(quote.expiresAt)))return 'unknown';return Date.parse(quote.expiresAt)>at?'current':'expired';}
- private reviewId(caseId:string,state:StoredCase){const revisions=state.revisions;return `review-${digest([this.buyerId,caseId,revisions.request,revisions.quote??'absent',revisions.evidence,revisions.permission,this.validity(state.quote)])}`;}
- private current(state:StoredCase,review:ReviewRecord){return sameRevisions(state.revisions,review.revisions)&&this.validity(state.quote)===this.validity(review.packet.quote,Date.parse(review.reviewedAt));}
- loadPacket(caseId:string,buyerId:string):PacketSnapshot {this.owner(buyerId);const state=this.state(caseId);const review=this.read<ReviewRecord>('reviews',this.reviewId(caseId,state));return {...this.snapshot(state),review:review&&this.current(state,review)?review:null};}
- async reviewQuotePacket(input:{caseId:string;expectedRevisions:Revisions;idempotencyKey:string},buyerId:string):Promise<ReviewRecord>{
+ private reviewId(caseId:string,state:StoredCase,at=this.now().getTime()){const revisions=state.revisions;return `review-${digest([this.buyerId,caseId,revisions.request,revisions.quote??'absent',revisions.evidence,revisions.permission,this.validity(state.quote,at)])}`;}
+ private current(state:StoredCase,review:ReviewRecord,at=this.now().getTime()){return sameRevisions(state.revisions,review.revisions)&&this.validity(state.quote,at)===this.validity(review.packet.quote,Date.parse(review.reviewedAt));}
+ loadPacket(caseId:string,buyerId:string):PacketSnapshot {this.owner(buyerId);const at=this.now(),state=this.state(caseId);const review=this.read<ReviewRecord>('reviews',this.reviewId(caseId,state,at.getTime()));return {...this.snapshot(state,at),review:review&&this.current(state,review,at.getTime())?review:null};}
+ async reviewQuotePacket(input:{caseId:string;expectedRevisions:Revisions;expectedReviewBasis:string;idempotencyKey:string},buyerId:string):Promise<ReviewRecord>{
   this.owner(buyerId);if(!input.idempotencyKey||input.idempotencyKey.length>160)throw new AppError('INVALID_KEY','A bounded idempotency key is required.');
   return this.transaction(()=>{
-   const state=this.state(input.caseId);this.expected(state,input.expectedRevisions);
-   const payloadHash=digest([input.caseId,input.expectedRevisions,this.validity(state.quote)]);const keyId=`${buyerId}:${input.idempotencyKey}`;
+   const at=this.now(),state=this.state(input.caseId);this.expected(state,input.expectedRevisions);
+   const packet=this.snapshot(state,at);
+   if(input.expectedReviewBasis!==packet.reviewBasis)throw new AppError('STALE_REVISION','The assessment changed. Reload and review the current findings.',409);
+   const payloadHash=digest([input.caseId,input.expectedRevisions,input.expectedReviewBasis,this.validity(state.quote,at.getTime())]);const keyId=`${buyerId}:${input.idempotencyKey}`;
    const oldKey=this.read<{payloadHash:string;reviewId:string}>('review_keys',keyId);
    if(oldKey&&oldKey.payloadHash!==payloadHash)throw new AppError('IDEMPOTENCY_CONFLICT','This action key was used for different findings.',409);
-   const reviewId=this.reviewId(input.caseId,state);let review=this.read<ReviewRecord>('reviews',reviewId);
-   if(!review){review={id:reviewId,buyerId,reviewedAt:this.now().toISOString(),revisions:clone(state.revisions),packet:this.snapshot(state)};this.write('reviews',reviewId,review);}
+   const reviewId=this.reviewId(input.caseId,state,at.getTime());let review=this.read<ReviewRecord>('reviews',reviewId);
+   if(!review){review={id:reviewId,buyerId,reviewedAt:at.toISOString(),revisions:clone(state.revisions),packet};this.write('reviews',reviewId,review);}
    this.write('review_keys',keyId,{payloadHash,reviewId});return review;
   });
  }
