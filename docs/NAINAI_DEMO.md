@@ -1,6 +1,21 @@
 # NaiNai: two-minute quote-only demo
 
-Current October 24, 2026. Plan only; no supplier contacted, product implemented or real quotation obtained. Canonical scope: [quote-only MVP](superpowers/specs/2026-10-23-nainai-quote-only-mvp-design.md). Reliability gates and unexecuted checks: [acceptance/readiness matrix](NAINAI_RELIABILITY.md).
+Current October 24, 2026. A working local fixture MVP now supports both cases, controls, review and export. No supplier has been contacted or real quotation obtained. The target judging story below still requires authentic evidence. Canonical scope: [quote-only MVP](superpowers/specs/2026-10-23-nainai-quote-only-mvp-design.md). Executed local checks and blocked live gates: [acceptance/readiness matrix](NAINAI_RELIABILITY.md).
+
+## Executable placeholder rehearsal
+
+Keep the app's **Synthetic demo** banner visible throughout. This rehearses software behavior; it is not the completed real-negotiation submission.
+
+| Time | Current working action |
+|---|---|
+| 0:00–0:20 | Open Coffee table. State that the personal need is real and all offers are synthetic. Show the strict under-$150 cap and unresolved delivery service. |
+| 0:20–0:40 | Select doorstep for the rehearsal, start a synthetic conversation, show takeover or stop, then inspect the original fixture and $144 full-cost breakdown. No real supplier confirmed it. |
+| 0:40–1:00 | Choose Missing cost. Point to unknown delivery and the unresolved outcome. Review/save remains possible without qualifying the offer. |
+| 1:00–1:25 | Switch to GPU compute. State no actual workload/company buyer. Select Longer minimum term: a $2 rate entails $2,688, versus the $1,728 complete fixture. No capacity is reserved and neither is a real offer. |
+| 1:25–1:50 | Open Review findings, expand Test a changed term, set a synthetic fee and apply it. Attempt Mark reviewed on the old snapshot: the server rejects it. Reopen and mark current findings reviewed. |
+| 1:50–2:00 | Save quote packet. Show intent/origin, costs, unresolved checks and revision-bound review in JSON. No purchase occurs. |
+
+The UI does not implement voice, public research or supplier outreach. Real provider IDs, supplier artifacts and a permitted recording can replace the relevant synthetic moments only after those integrations and permissions exist. Three timed human rehearsals, backup recording and Devpost draft remain outstanding.
 
 ## One story
 

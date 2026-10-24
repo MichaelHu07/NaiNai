@@ -6,7 +6,7 @@ Build a strong solo Cal Hacks submission with maximum credible track coverage th
 
 Read HACK.md, docs/superpowers/specs/2026-10-23-nainai-quote-only-mvp-design.md and docs/NAINAI_DEMO.md for current scope/status. This quote-only revision supersedes both earlier designs and their purchase-approval/budget-reservation endpoint; those files remain historical references. CAL_HACKS_13_TRACKS.md supplies requirements and sources. OPENBOOKS_STRATEGY.md and OPENBOOKS_WORKFLOW.md are historical references. Organizer/sponsor requirements outrank third-party advice. Product implementation begins during the event; research/planning may precede it.
 
-The current development plan is docs/superpowers/plans/2026-10-23-nainai-quote-only.md. Use its shared interfaces, lead/three-worker ownership and reviewable milestones when implementation is requested; preserve intent/evidence labels, strict-cap and changed-condition semantics. No scaffold has been created.
+The current development plan is docs/superpowers/plans/2026-10-23-nainai-quote-only.md. Use its shared interfaces, lead/three-worker ownership and reviewable milestones; preserve intent/evidence labels, strict-cap and changed-condition semantics. A local fixture-only implementation now exists. README.md documents startup. Live provider wiring, real outreach and submission readiness remain open gates.
 
 Read OPENBOOKS_JUDGES.md for researched professional backgrounds and presentation preparation. Distinguish explicit event introductions, profile labels and colleague reports. Do not imply anyone is assigned to our table or predict personal judging preferences. Use documented expertise to prepare evidence and questions while keeping the published rubric authoritative.
 

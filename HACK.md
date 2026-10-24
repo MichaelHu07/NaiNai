@@ -1,6 +1,22 @@
 # NaiNai working brief
 
-Updated October 24, 2026. User selected **one quote-only product with two cases**: the coffee table is a real personal need; GPU compute is an **evaluation-only** illustration for potential AI-company use. **Grandma means business.** User now prioritizes reliability and implementation planning. Planning only: no product scaffold, provider calls, supplier contact, real quote, purchase, interviews or measured results yet. Implementation begins during the official hacking period and when requested.
+## Current implementation — October 24, 2026
+
+The user authorized implementation with placeholders and selected https://github.com/MichaelHu07/NaiNai. The previously empty repository is cloned at `C:/Users/micha/OneDrive/Documents/ChatGPT/NaiNai`, branch `codex/nainai-mvp`. Work is local and unpushed. [README](README.md) documents Node 24.19.0, pnpm, startup and the local access key. The Cal-Hacks planning checkout remains separate.
+
+The buyer can unlock a persistent SQLite workspace, switch between the real personal table need and evaluation-only GPU assumptions, inspect synthetic original terms and deterministic full-cost checks, rehearse a conversation with pause/takeover/stop, review exact current findings and download a nonbinding JSON packet. Missing costs, altered condition, longer commitments, refusal and source failure remain distinct. Sharing withdrawal applies to historical exports. Restart interrupts a synthetic session without sending anything. Expiry changes the current findings while preserving historical reviews.
+
+UI, evidence and voice workers used exclusive modules; the lead integrated shared contracts, authenticated API, durable review and recovery. Independent module review found expiry confirmation, time-dependent review and UI polling freshness gaps; targeted regressions and repairs were added. Current local verification: 145 unit/API assertions, 11 browser tests including the local API smoke, typecheck and production build pass. The [reliability matrix](docs/NAINAI_RELIABILITY.md) records exact passing local boundaries and blocked live gates. No real provider call, supplier contact, real quotation, purchase, interview or measured saving has occurred. All genuine activity counters remain zero. Fixture conversations are deterministic text, not a model loop or audio call. The future dispatch/callback journal is unit-tested through injected synthetic transport and is not wired to a provider.
+
+Both cases have been exercised through the real local API/browser flow. The 120-second product story remains; an executable, explicitly synthetic rehearsal is now documented in [the demo](docs/NAINAI_DEMO.md). The real-negotiation objective remains unmet. User/community validation and all five primary sponsor-evidence gates remain open; no account setup is required for the authorized placeholder milestone. No second submission or optional integration was added.
+
+Weakest judging dimension: validated usefulness and differentiation remain unproven. Next action after the placeholder milestone: human validation of the buying problem, then account/runtime readiness and separately authorized real table outreach. Do not substitute fixture reliability for supplier evidence. Optional feature cutoff remains October 25 00:00 Eastern, integrations 06:00, submission noon. The October 24 02:18 Eastern check leaves about 33h42m; elapsed time is not approval.
+
+## Historical planning record
+
+The dated notes below preserve earlier planning status; the current implementation section above supersedes claims that no scaffold exists.
+
+User selected **one quote-only product with two cases**: the coffee table is a real personal need; GPU compute is an **evaluation-only** illustration for potential AI-company use. **Grandma means business.**
 
 ## Current scope and sources
 

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.25.0",
   "engines": { "node": ">=24.0.0" },
   "scripts": {
     "dev": "concurrently -k -n api,web \"tsx watch src/server/index.ts\" \"vite --host 127.0.0.1\"",
@@ -10,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "build": "vite build",
     "start": "tsx src/server/index.ts",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test --config tests/ui/playwright.config.ts"
   },
   "dependencies": {
     "@radix-ui/themes": "^3.2.1",
