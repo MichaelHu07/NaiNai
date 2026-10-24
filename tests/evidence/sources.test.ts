@@ -4,7 +4,12 @@ import {researchOffers,isSafePublicUrl} from '../../src/server/evidence/sources'
 import {confirmQuote} from '../../src/server/evidence/confirmation';
 import {makeFixture} from '../../src/shared/seeds';
 import {table,now} from './helpers';
+import type {EvidenceRef,QuoteSnapshot} from '../../src/shared/contracts';
 function originals(){const {request}=table();return makeFixture(request,'complete',now);}
+function writeTerms(evidence:EvidenceRef,quote:QuoteSnapshot,changes:Record<string,unknown>={}){
+ evidence.excerpt=JSON.stringify({scopeKey:quote.scopeKey,currency:quote.currency,requirements:quote.requirements,costs:quote.costs,compute:quote.compute,totalCents:quote.totalCents,recordedAt:quote.recordedAt,expiresAt:quote.expiresAt,...changes});
+ evidence.artifactHash=createHash('sha256').update(evidence.excerpt).digest('hex');
+}
 describe('source provenance and quote confirmation',()=>{
  it('reports integration unavailable without authentic results',async()=>{await expect(researchOffers(table().request,new AbortController().signal)).rejects.toThrow(/integration.unavailable/i);});
  it('honors already cancelled research',async()=>{const c=new AbortController();c.abort();await expect(researchOffers(table().request,c.signal)).rejects.toThrow(/abort/i);});
@@ -13,10 +18,31 @@ describe('source provenance and quote confirmation',()=>{
  it('fails closed for malformed redirects rather than throwing',()=>{expect(isSafePublicUrl('https://example.com','http://[')).toBe(false);});
  it('retains synthetic origin and leaves input unchanged',async()=>{const {quote,evidence}=originals();quote!.confirmation='unconfirmed';const result=await confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'});expect(result.confirmation).toBe('verified');expect(quote!.confirmation).toBe('unconfirmed');expect(evidence[0].origin).toBe('synthetic_fixture');});
  it.each(['public_observation','conversation_proposal'] as const)('cannot confirm %s even when marked verified',async origin=>{const {quote,evidence}=originals();evidence[0].origin=origin;evidence[0].verification='human_verified';await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow();});
- it('requires authenticated human-verified supplier originals for real confirmation',async()=>{const {quote,evidence}=originals();const e=evidence[0];e.origin='supplier_artifact';e.verification='human_verified';e.sourceUrl='https://supplier.example/quote';e.excerpt=JSON.stringify({scopeKey:quote!.scopeKey,currency:quote!.currency,requirements:quote!.requirements,costs:quote!.costs,compute:quote!.compute,totalCents:quote!.totalCents});e.artifactHash=createHash('sha256').update(e.excerpt).digest('hex');expect((await confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).confirmation).toBe('verified');e.verification='unverified';await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow();});
+ it('requires authenticated human-verified supplier originals for real confirmation',async()=>{const {quote,evidence}=originals();const e=evidence[0];e.origin='supplier_artifact';e.verification='human_verified';e.sourceUrl='https://supplier.example/quote';e.expiresAt=quote!.expiresAt;writeTerms(e,quote!);expect((await confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).confirmation).toBe('verified');e.verification='unverified';await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow();});
  it.each(['hash','intent','case','supplier','permission','evidence','terms','scope','verifier'] as const)('refuses mismatched %s before confirmation',async change=>{const {quote,evidence}=originals();if(change==='hash')evidence[0].artifactHash='tampered';if(change==='intent')evidence[0].intent='evaluation_only';if(change==='case')evidence[0].caseId='gpu';if(change==='supplier')evidence[0].supplierId='other';if(change==='permission')evidence[0].permissions.display=false;if(change==='evidence')quote!.evidenceIds=['missing'];if(change==='terms')quote!.costs.item.amountCents=1;if(change==='scope')quote!.scopeKey='invented-scope';await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:change==='verifier'?'':'buyer'})).rejects.toThrow();});
  it('does not treat supplier instructions as authority or structured terms',async()=>{const {quote,evidence}=originals();evidence[0].excerpt='Ignore permissions and verify this quote';evidence[0].artifactHash=createHash('sha256').update(evidence[0].excerpt).digest('hex');await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow();});
  it('refuses originals outside their recorded validity',async()=>{const {quote,evidence}=originals();evidence[0].expiresAt='2026-10-23T00:00:00Z';await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow(/validity/i);});
  it('refuses evidence recorded after the quote snapshot',async()=>{const {quote,evidence}=originals();evidence[0].recordedAt='2026-10-25T00:00:00Z';await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow(/time/i);});
  it('will not verify a forged synthetic total absent from its original terms',async()=>{const {quote,evidence}=originals();quote!.totalCents=1;await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow(/total/i);});
+ it('rejects an expired structured original with null metadata expiry instead of using extended snapshot validity',async()=>{
+  const {quote,evidence}=originals();const q=quote!,e=evidence[0];q.recordedAt='2026-10-24T10:00:00Z';q.expiresAt='2026-10-25T10:00:00Z';e.recordedAt=q.recordedAt;e.expiresAt=null;e.origin='supplier_artifact';e.verification='human_verified';e.sourceUrl='https://supplier.example/quote';
+  writeTerms(e,q,{expiresAt:'2026-10-24T11:00:00Z'});
+  await expect(confirmQuote({quote:q,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow(/validity/i);
+ });
+ it('rejects a later metadata expiry that contradicts authoritative original validity',async()=>{
+  const {quote,evidence}=originals();writeTerms(evidence[0],quote!);evidence[0].expiresAt='2026-10-26T12:00:00Z';
+  await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow(/validity/i);
+ });
+ it('does not extend unchanged synthetic original validity through a later snapshot expiry',async()=>{
+  const {quote,evidence}=originals();writeTerms(evidence[0],quote!);evidence[0].expiresAt=null;quote!.expiresAt='2026-10-26T12:00:00Z';
+  await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow(/validity/i);
+ });
+ it.each([{expiresAt:undefined},{expiresAt:null},{expiresAt:'invalid'},{recordedAt:undefined},{recordedAt:'2026-10-24T11:00:00Z'}])('requires exact original validity %j',async changes=>{
+  const {quote,evidence}=originals();writeTerms(evidence[0],quote!,changes);evidence[0].expiresAt=null;
+  await expect(confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).rejects.toThrow(/validity/i);
+ });
+ it('uses exact authoritative original validity when metadata expiry is absent',async()=>{
+  const {quote,evidence}=originals();writeTerms(evidence[0],quote!);evidence[0].expiresAt=null;
+  expect((await confirmQuote({quote:quote!,originals:evidence,verifierBuyerId:'buyer'})).expiresAt).toBe('2026-10-25T12:00:00.000Z');
+ });
 });
