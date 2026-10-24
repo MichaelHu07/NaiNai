@@ -1,6 +1,6 @@
 # NaiNai
 
-**Grandma means business.** A small buying team that makes quote terms, missing costs and human controls visible.
+A small buying team that makes quote terms, missing costs and human controls visible.
 
 This is a working **local, fixture-only MVP**. The coffee table is a real personal need; the GPU case is an evaluation with no actual workload or company buyer. Every supplier quote, conversation and tax amount in the app is synthetic. Claude, Cartesia and Apify are placeholders. No supplier is contacted, no purchase is made and no GPU capacity is reserved.
 
